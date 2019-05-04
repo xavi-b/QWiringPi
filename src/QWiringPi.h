@@ -15,14 +15,17 @@ class QWiringPi : public QThread
     typedef int Mode;
 
 private:
-    bool _isSetUp;
-    QMap<Pin, QPair<Mode, int>> _pins;
+    bool initialized = false;
+    QMap<Pin, QPair<Mode, int>> pins;
 
     QWiringPi(QObject* parent = nullptr);
     void run() override;
 
 public:
-    static QWiringPi* Instance(QObject* parent = nullptr);
+    static QWiringPi* instance(QObject* parent = nullptr);
+
+    bool initialize();
+    bool hasInitialized();
 
     bool setPinMode(Pin pin, Mode mode, bool firstSignal = false);
     bool setPinInputMode(Pin pin, bool firstSignal = false);
@@ -39,7 +42,6 @@ public:
 signals:
     void pinValueChanged(Pin, int);
 
-public slots:
 };
 
 #endif // QWIRINGPI_H

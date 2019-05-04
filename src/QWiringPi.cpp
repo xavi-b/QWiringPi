@@ -1,39 +1,52 @@
 #include "QWiringPi.h"
 
 QWiringPi::QWiringPi(QObject *parent)
-    : QThread(parent),
-      _isSetUp(false)
+    : QThread(parent)
+{
+    initialize();
+}
+
+bool QWiringPi::initialize()
 {
     if(geteuid() == 0)
     {
         wiringPiSetup();
-        _isSetUp = true;
+        this->initialized = true;
+        connect(this, &QThread::finished, this, &QObject::deleteLater);
+        start();
     }
+
+    return this->initialized;
+}
+
+bool QWiringPi::hasInitialized()
+{
+    return this->initialized;
 }
 
 void QWiringPi::run()
 {
-    if(!_isSetUp)
+    if(!this->initialized)
         return;
 
     while(true)
     {
-        for(auto pin = _pins.begin(); pin != _pins.end(); pin++)
+        for(auto pin = this->pins.begin(); pin != this->pins.end(); pin++)
         {
             if(pin->first == INPUT)
             {
-                int newValue = digitalRead(_pins.key(*pin));
+                int newValue = digitalRead(this->pins.key(*pin));
                 if(newValue != pin->second)
                 {
                     pin->second = newValue;
-                    emit pinValueChanged(_pins.key(*pin), newValue);
+                    emit pinValueChanged(this->pins.key(*pin), newValue);
                 }
             }
         }
     }
 }
 
-QWiringPi* QWiringPi::Instance(QObject* parent)
+QWiringPi* QWiringPi::instance(QObject* parent)
 {
     static QWiringPi instance(parent);
     return &instance;
@@ -41,7 +54,7 @@ QWiringPi* QWiringPi::Instance(QObject* parent)
 
 bool QWiringPi::setPinMode(Pin pin, Mode mode, bool firstSignal)
 {
-    if(!_isSetUp)
+    if(!this->initialized)
         return false;
 
     pinMode(pin, mode);
@@ -54,7 +67,7 @@ bool QWiringPi::setPinMode(Pin pin, Mode mode, bool firstSignal)
             emit pinValueChanged(pin, value);
     }
 
-    _pins.insert(pin, QPair<Mode, int>(mode, value));
+    this->pins.insert(pin, QPair<Mode, int>(mode, value));
 
     return true;
 }
@@ -87,10 +100,13 @@ bool QWiringPi::setPinClockOutputMode(Pin pin, bool firstSignal)
 
 bool QWiringPi::setPullOff(Pin pin)
 {
-    if(!_isSetUp)
+    if(!this->initialized)
         return false;
 
-    if(_pins[pin].first != INPUT)
+    if(this->pins.find(pin) == this->pins.end())
+        return false;
+
+    if(this->pins[pin].first != INPUT)
         return false;
 
     pullUpDnControl(pin, PUD_OFF);
@@ -99,10 +115,13 @@ bool QWiringPi::setPullOff(Pin pin)
 
 bool QWiringPi::setPullUp(Pin pin)
 {
-    if(!_isSetUp)
+    if(!this->initialized)
         return false;
 
-    if(_pins[pin].first != INPUT)
+    if(this->pins.find(pin) == this->pins.end())
+        return false;
+
+    if(this->pins[pin].first != INPUT)
         return false;
 
     pullUpDnControl(pin, PUD_UP);
@@ -111,10 +130,13 @@ bool QWiringPi::setPullUp(Pin pin)
 
 bool QWiringPi::setPullDown(Pin pin)
 {
-    if(!_isSetUp)
+    if(!this->initialized)
         return false;
 
-    if(_pins[pin].first != INPUT)
+    if(this->pins.find(pin) == this->pins.end())
+        return false;
+
+    if(this->pins[pin].first != INPUT)
         return false;
 
     pullUpDnControl(pin, PUD_DOWN);
@@ -123,10 +145,13 @@ bool QWiringPi::setPullDown(Pin pin)
 
 bool QWiringPi::write(Pin pin, bool value)
 {
-    if(!_isSetUp)
+    if(!this->initialized)
         return false;
 
-    if(_pins[pin].first != OUTPUT)
+    if(this->pins.find(pin) == this->pins.end())
+        return false;
+
+    if(this->pins[pin].first != OUTPUT)
         return false;
 
     digitalWrite(pin, value);
@@ -135,10 +160,13 @@ bool QWiringPi::write(Pin pin, bool value)
 
 bool QWiringPi::write(Pin pin, unsigned short value)
 {
-    if(!_isSetUp)
+    if(!this->initialized)
         return false;
 
-    if(_pins[pin].first != PWM_OUTPUT)
+    if(this->pins.find(pin) == this->pins.end())
+        return false;
+
+    if(this->pins[pin].first != PWM_OUTPUT)
         return false;
 
     if(value > 1024)
@@ -150,10 +178,13 @@ bool QWiringPi::write(Pin pin, unsigned short value)
 
 bool QWiringPi::read(Pin pin, bool& value)
 {
-    if(!_isSetUp)
+    if(!this->initialized)
         return false;
 
-    if(_pins[pin].first != INPUT)
+    if(this->pins.find(pin) == this->pins.end())
+        return false;
+
+    if(this->pins[pin].first != INPUT)
         return false;
 
     value = digitalRead(pin);
