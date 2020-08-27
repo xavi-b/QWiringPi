@@ -4,28 +4,40 @@
 #include <wiringPi.h>
 #include <unistd.h>
 
-#include <QThread>
+#include <QObject>
 #include <QMap>
-#include <QPair>
+#include <QSocketNotifier>
+#include <QFile>
 
-class QWiringPi : public QThread
+class QWiringPi : public QObject
 {
     Q_OBJECT
     typedef int Pin;
     typedef int Mode;
 
 private:
-    bool initialized = false;
-    QMap<Pin, QPair<Mode, int>> pins;
+    struct PinInfo
+    {
+        ~PinInfo()
+        {
+            if(file)
+                file->deleteLater();
+
+            if(socketNotifier)
+                socketNotifier->deleteLater();
+        }
+
+        Mode mode;
+        QFile* file = nullptr;
+        QSocketNotifier* socketNotifier = nullptr;
+    };
+
+    QMap<Pin, PinInfo> pins;
 
     QWiringPi(QObject* parent = nullptr);
-    void run() override;
 
 public:
     static QWiringPi* instance(QObject* parent = nullptr);
-
-    bool initialize();
-    bool hasInitialized();
 
     bool setPinMode(Pin pin, Mode mode, bool firstSignal = false);
     bool setPinInputMode(Pin pin, bool firstSignal = false);

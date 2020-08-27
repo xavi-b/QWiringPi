@@ -1,48 +1,16 @@
 #include "QWiringPi.h"
 
 QWiringPi::QWiringPi(QObject *parent)
-    : QThread(parent)
-{
-    initialize();
-}
-
-bool QWiringPi::initialize()
+    : QObject(parent)
 {
     if(geteuid() == 0)
     {
-        wiringPiSetup();
-        this->initialized = true;
-        connect(this, &QThread::finished, this, &QObject::deleteLater);
-        start();
+        if(wiringPiSetup() < 0)
+            throw std::runtime_error("wiringPiSetup() error");
     }
-
-    return this->initialized;
-}
-
-bool QWiringPi::hasInitialized()
-{
-    return this->initialized;
-}
-
-void QWiringPi::run()
-{
-    if(!this->initialized)
-        return;
-
-    while(true)
+    else
     {
-        for(auto pin = this->pins.begin(); pin != this->pins.end(); pin++)
-        {
-            if(pin->first == INPUT)
-            {
-                int newValue = digitalRead(this->pins.key(*pin));
-                if(newValue != pin->second)
-                {
-                    pin->second = newValue;
-                    emit pinValueChanged(this->pins.key(*pin), newValue);
-                }
-            }
-        }
+        throw std::runtime_error("wiringPiSetup() not called with root privileges");
     }
 }
 
@@ -54,9 +22,6 @@ QWiringPi* QWiringPi::instance(QObject* parent)
 
 bool QWiringPi::setPinMode(Pin pin, Mode mode, bool firstSignal)
 {
-    if(!this->initialized)
-        return false;
-
     pinMode(pin, mode);
 
     int value = 0;
@@ -67,7 +32,15 @@ bool QWiringPi::setPinMode(Pin pin, Mode mode, bool firstSignal)
             emit pinValueChanged(pin, value);
     }
 
-    this->pins.insert(pin, QPair<Mode, int>(mode, value));
+    QFile* file = new QFile(QString("/sys/class/gpio/gpio%1/value").arg(pin));
+    QSocketNotifier* socketNotifier = new QSocketNotifier(file->handle(), QSocketNotifier::Read);
+    connect(socketNotifier, &QSocketNotifier::activated, this, [=]()
+    {
+        file->readAll();
+        emit pinValueChanged(pin, digitalRead(pin));
+    });
+    PinInfo pinInfo = {mode, file, socketNotifier};
+    this->pins.insert(pin, pinInfo);
 
     return true;
 }
@@ -100,13 +73,10 @@ bool QWiringPi::setPinClockOutputMode(Pin pin, bool firstSignal)
 
 bool QWiringPi::setPullOff(Pin pin)
 {
-    if(!this->initialized)
-        return false;
-
     if(this->pins.find(pin) == this->pins.end())
         return false;
 
-    if(this->pins[pin].first != INPUT)
+    if(this->pins[pin].mode != INPUT)
         return false;
 
     pullUpDnControl(pin, PUD_OFF);
@@ -115,13 +85,10 @@ bool QWiringPi::setPullOff(Pin pin)
 
 bool QWiringPi::setPullUp(Pin pin)
 {
-    if(!this->initialized)
-        return false;
-
     if(this->pins.find(pin) == this->pins.end())
         return false;
 
-    if(this->pins[pin].first != INPUT)
+    if(this->pins[pin].mode != INPUT)
         return false;
 
     pullUpDnControl(pin, PUD_UP);
@@ -130,13 +97,10 @@ bool QWiringPi::setPullUp(Pin pin)
 
 bool QWiringPi::setPullDown(Pin pin)
 {
-    if(!this->initialized)
-        return false;
-
     if(this->pins.find(pin) == this->pins.end())
         return false;
 
-    if(this->pins[pin].first != INPUT)
+    if(this->pins[pin].mode != INPUT)
         return false;
 
     pullUpDnControl(pin, PUD_DOWN);
@@ -145,13 +109,11 @@ bool QWiringPi::setPullDown(Pin pin)
 
 bool QWiringPi::write(Pin pin, bool value)
 {
-    if(!this->initialized)
-        return false;
 
     if(this->pins.find(pin) == this->pins.end())
         return false;
 
-    if(this->pins[pin].first != OUTPUT)
+    if(this->pins[pin].mode != OUTPUT)
         return false;
 
     digitalWrite(pin, value);
@@ -160,13 +122,10 @@ bool QWiringPi::write(Pin pin, bool value)
 
 bool QWiringPi::write(Pin pin, unsigned short value)
 {
-    if(!this->initialized)
-        return false;
-
     if(this->pins.find(pin) == this->pins.end())
         return false;
 
-    if(this->pins[pin].first != PWM_OUTPUT)
+    if(this->pins[pin].mode != PWM_OUTPUT)
         return false;
 
     if(value > 1024)
@@ -178,13 +137,10 @@ bool QWiringPi::write(Pin pin, unsigned short value)
 
 bool QWiringPi::read(Pin pin, bool& value)
 {
-    if(!this->initialized)
-        return false;
-
     if(this->pins.find(pin) == this->pins.end())
         return false;
 
-    if(this->pins[pin].first != INPUT)
+    if(this->pins[pin].mode != INPUT)
         return false;
 
     value = digitalRead(pin);
